@@ -1,7 +1,8 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from ids_eval.dto.data_manager_config import DataManagerConfig
 from ids_eval.dto.evaluation_config import EvaluationConfig
+from ids_eval.enumeration.split_method import SplitMethod
 
 
 class GeneralConfig(BaseModel):
@@ -23,10 +24,6 @@ class GeneralConfig(BaseModel):
     plugin_runtime_metric_path: str = Field(
         default="plugin_runtime_metric/", description="Path to runtime metric collection plugins"
     )
-    eps_values: list[float] = Field(
-        default=[0.001, 0.01, 0.02, 0.05, 0.1, 0.2, 0.3], # TODO: check if this is set as default and make it adjustable in the project settings
-        description="Pertubation magnitude list of epsilon for Robustness Index (max 0.3 magnitude)"
-    )
 
 
 
@@ -44,3 +41,45 @@ class RunConfig(BaseModel):
     def get_config_file_hash(self) -> str | None:
         """Returns the hash of the config file."""
         return getattr(self, "_config_file_hash", None)
+
+    @model_validator(mode="after")
+    def validate_feature_mask_dataset_names(self) -> "RunConfig":
+        robustness = self.evaluation.robustness if self.evaluation else None
+        if robustness is None or not robustness.feature_masks or self.data_manager is None:
+            return self
+        dataset_names = {dataset.name for dataset in self.data_manager.dataset}
+        unknown = {feature_mask.d_name for feature_mask in robustness.feature_masks} - dataset_names
+        if unknown:
+            raise ValueError(f"robustness.feature_masks refers to unknown datasets {sorted(unknown)}. Configured datasets: {sorted(dataset_names)}")
+        return self
+
+    @model_validator(mode="after")
+    def validate_model_saving_for_sweep(self) -> "RunConfig":
+        robustness = self.evaluation.robustness if self.evaluation else None
+        if robustness is None or not robustness.enabled:
+            return self
+
+        unsaved = [model.plugin for model in self.evaluation.anomaly_models or [] if not model.save_model]
+        if unsaved:
+            raise ValueError(f"The Sweep requires save_model: true for every model, but {unsaved} fail(s) to comply.")
+        return self
+
+    @model_validator(mode="after")
+    def validate_binary_labels_for_sweep(self) -> "RunConfig":
+        robustness = self.evaluation.robustness if self.evaluation else None
+        if robustness is None or not robustness.enabled:
+            return self
+
+        if self.evaluation.general.is_multiclass:
+            raise ValueError("The Sweep is defined for binary labels (benign vs. attack) only. Set evaluation.general.is_multiclass to false.")
+        return self
+
+    @model_validator(mode="after")
+    def validate_split_method_for_sweep(self) -> "RunConfig":
+        robustness = self.evaluation.robustness if self.evaluation else None
+        if robustness is None or not robustness.enabled or self.data_manager is None:
+            return self
+
+        if self.data_manager.split.method == SplitMethod.KFOLDSPLIT:
+            raise ValueError("The Sweep does not support k_fold_split. ")
+        return self

@@ -15,7 +15,7 @@ class MlIdsDnn(AbstractIDSConnector):
     Deep Neural Network (DNN) IDS model based on the ICCCNT paper:
     R. Vigneswaran, V. Ravi, S. Kp, und P. Poornachandran,
     „Evaluating Shallow and Deep Neural Networks for Network Intrusion Detection Systems in Cyber Security“,
-    Juli 2018, S. 1–6. doi: 10.1109/ICCCNT.2018.8494096.
+    Juli 2018, S. 1-6. doi: 10.1109/ICCCNT.2018.8494096.
     """
 
     def __init__(self):
